@@ -9,7 +9,7 @@ from arsenal.config import ConfigManager
 class MetadataManager:
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.data = {
+        self.data: dict[str, list[str] | dict[str, list[str]]] = {
             "os": [
                 "Windows",
                 "Linux",
@@ -136,42 +136,42 @@ class MetadataManager:
                 ],
             },
             "genres": {
-                "Action Role-Playing",
-                "Adult Only",
-                "Anime",
-                "Arcade & Rhythm",
-                "Building & Automation Sims",
-                "Card & Board",
-                "Casual",
-                "City & Settlement Builders",
-                "Dating Sims",
-                "Farming & Crafting Sims",
-                "Fighting & Martial Arts",
-                "First-Person Shooter",
-                "Hobby & Job Sims",
-                "Horror",
-                "Individual Sports",
-                "Life & Immersive Sims",
-                "Military Strategy",
-                "Mystery & Detective",
-                "Open World",
-                "Platformers & Runners",
-                "Racing",
-                "Racing Sim",
-                "Real-Time Strategy",
-                "Rogue-Likes & Rogue-Lites",
-                "Sandbox & Physics Sims",
-                "Sci-Fi & Cyberpunk",
-                "Space & Flight Sims",
-                "Sports Sims & Sports Managers",
-                "Strategy & Tactical Role-Playing",
-                "Survival",
-                "Team Sports",
-                "Third-Person Shooter",
-                "Tower Defense",
-                "Turn-Based Role-Playing",
-                "Turn-Based Strategy",
-                "Visual Novels",
+                "Action Role-Playing": [],
+                "Adult Only": [],
+                "Anime": [],
+                "Arcade & Rhythm": [],
+                "Building & Automation Sims": [],
+                "Card & Board": [],
+                "Casual": [],
+                "City & Settlement Builders": [],
+                "Dating Sims": [],
+                "Farming & Crafting Sims": [],
+                "Fighting & Martial Arts": [],
+                "First-Person Shooter": [],
+                "Hobby & Job Sims": [],
+                "Horror": [],
+                "Individual Sports": [],
+                "Life & Immersive Sims": [],
+                "Military Strategy": [],
+                "Mystery & Detective": [],
+                "Open World": [],
+                "Platformers & Runners": [],
+                "Racing": [],
+                "Racing Sim": [],
+                "Real-Time Strategy": [],
+                "Rogue-Likes & Rogue-Lites": [],
+                "Sandbox & Physics Sims": [],
+                "Sci-Fi & Cyberpunk": [],
+                "Space & Flight Sims": [],
+                "Sports Sims & Sports Managers": [],
+                "Strategy & Tactical Role-Playing": [],
+                "Survival": [],
+                "Team Sports": [],
+                "Third-Person Shooter": [],
+                "Tower Defense": [],
+                "Turn-Based Role-Playing": [],
+                "Turn-Based Strategy": [],
+                "Visual Novels": [],
             },
         }
         self.load()
@@ -190,7 +190,7 @@ class MetadataManager:
                 with open(metadata_file, "r", encoding="utf-8") as f:
                     loaded_data = json.load(f)
                     # Merge loaded data with default keys if missing
-                    for k in self.data.keys():
+                    for k in self.data:
                         if k in loaded_data:
                             self.data[k] = loaded_data[k]
 
@@ -214,23 +214,23 @@ class MetadataManager:
         except Exception as e:
             logger.error(f"Failed to save metadata: {e}")
 
-    def get_os_list(self):
-        return self.data["os"]
+    def get_os_list(self) -> list[str]:
+        return self.data["os"]  # pyright: ignore[reportReturnType]
 
-    def get_categories(self):
-        return self.data["categories"]
+    def get_categories(self) -> dict[str, list[str]]:
+        return self.data["categories"]  # pyright: ignore[reportReturnType]
 
-    def get_genres(self):
-        return self.data["genres"]
+    def get_genres(self) -> dict[str, list[str]]:
+        return self.data["genres"]  # pyright: ignore[reportReturnType]
 
-    def set_os_list(self, os_list):
+    def set_os_list(self, os_list: list[str]):
         self.data["os"] = os_list
         self.save()
 
-    def set_categories(self, categories):
+    def set_categories(self, categories: dict[str, list[str]]):
         self.data["categories"] = categories
         self.save()
 
-    def set_genres(self, genres):
+    def set_genres(self, genres: dict[str, list[str]]):
         self.data["genres"] = genres
         self.save()

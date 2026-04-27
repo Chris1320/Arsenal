@@ -1,4 +1,6 @@
-from PySide6.QtWidgets import (
+from typing import Callable
+
+from PySide6.QtWidgets import (  # pylint: disable=no-name-in-module
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -47,7 +49,12 @@ class CategoryManagerWidget(QWidget):
         )
         layout.addLayout(self.genres_tree_widget)
 
-    def _create_list_manager(self, title, getter_func, setter_func):
+    def _create_list_manager(
+        self,
+        title: str,
+        getter_func: Callable[[], list[str]],
+        setter_func: Callable[[list[str]], None],
+    ):
         vbox = QVBoxLayout()
         vbox.addWidget(QLabel(title))
 
@@ -77,7 +84,12 @@ class CategoryManagerWidget(QWidget):
         vbox.addLayout(hbox)
         return vbox
 
-    def _list_add_item(self, list_widget, getter_func, setter_func):
+    def _list_add_item(
+        self,
+        list_widget: QListWidget,
+        getter_func: Callable[[], list[str]],
+        setter_func: Callable[[list[str]], None],
+    ):
         text, ok = QInputDialog.getText(self, "Add Item", "Enter new name:")
         if ok and text:
             items = getter_func()
@@ -87,7 +99,12 @@ class CategoryManagerWidget(QWidget):
                 list_widget.clear()
                 list_widget.addItems(items)
 
-    def _list_remove_item(self, list_widget, getter_func, setter_func):
+    def _list_remove_item(
+        self,
+        list_widget: QListWidget,
+        getter_func: Callable[[], list[str]],
+        setter_func: Callable[[list[str]], None],
+    ):
         current_item = list_widget.currentItem()
         if current_item:
             text = current_item.text()
@@ -95,9 +112,13 @@ class CategoryManagerWidget(QWidget):
                 self,
                 "Remove Item",
                 f"Are you sure you want to remove '{text}'?",
-                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
+                | QMessageBox.No,  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
             )
-            if reply == QMessageBox.Yes:
+            if (
+                reply
+                == QMessageBox.Yes  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
+            ):
                 items = getter_func()
                 if text in items:
                     items.remove(text)
@@ -105,12 +126,21 @@ class CategoryManagerWidget(QWidget):
                     list_widget.clear()
                     list_widget.addItems(items)
 
-    def _list_rename_item(self, list_widget, getter_func, setter_func):
+    def _list_rename_item(
+        self,
+        list_widget: QListWidget,
+        getter_func: Callable[[], list[str]],
+        setter_func: Callable[[list[str]], None],
+    ):
         current_item = list_widget.currentItem()
         if current_item:
             old_text = current_item.text()
             new_text, ok = QInputDialog.getText(
-                self, "Rename Item", "Enter new name:", QLineEdit.Normal, old_text
+                self,
+                "Rename Item",
+                "Enter new name:",
+                QLineEdit.Normal,  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
+                old_text,
             )
             if ok and new_text and new_text != old_text:
                 items = getter_func()
@@ -121,7 +151,12 @@ class CategoryManagerWidget(QWidget):
                     list_widget.clear()
                     list_widget.addItems(items)
 
-    def _create_tree_manager(self, title, getter_func, setter_func):
+    def _create_tree_manager(
+        self,
+        title: str,
+        getter_func: Callable[[], dict[str, list[str]]],
+        setter_func: Callable[[dict[str, list[str]]], None],
+    ):
         vbox = QVBoxLayout()
         vbox.addWidget(QLabel(title))
 
@@ -160,7 +195,7 @@ class CategoryManagerWidget(QWidget):
         vbox.addLayout(hbox2)
         return vbox
 
-    def _populate_tree(self, tree_widget, data_dict):
+    def _populate_tree(self, tree_widget: QTreeWidget, data_dict: dict[str, list[str]]):
         tree_widget.clear()
         for main_cat, sub_cats in data_dict.items():
             parent = QTreeWidgetItem(tree_widget)
@@ -170,7 +205,12 @@ class CategoryManagerWidget(QWidget):
                 child.setText(0, sub_cat)
         tree_widget.expandAll()
 
-    def _tree_add_main(self, tree_widget, getter_func, setter_func):
+    def _tree_add_main(
+        self,
+        tree_widget: QTreeWidget,
+        getter_func: Callable[[], dict[str, list[str]]],
+        setter_func: Callable[[dict[str, list[str]]], None],
+    ):
         text, ok = QInputDialog.getText(self, "Add Main Category", "Enter name:")
         if ok and text:
             data = getter_func()
@@ -179,7 +219,12 @@ class CategoryManagerWidget(QWidget):
                 setter_func(data)
                 self._populate_tree(tree_widget, data)
 
-    def _tree_add_sub(self, tree_widget, getter_func, setter_func):
+    def _tree_add_sub(
+        self,
+        tree_widget: QTreeWidget,
+        getter_func: Callable[[], dict[str, list[str]]],
+        setter_func: Callable[[dict[str, list[str]]], None],
+    ):
         current_item = tree_widget.currentItem()
         if not current_item:
             QMessageBox.warning(
@@ -204,7 +249,12 @@ class CategoryManagerWidget(QWidget):
                 setter_func(data)
                 self._populate_tree(tree_widget, data)
 
-    def _tree_remove_item(self, tree_widget, getter_func, setter_func):
+    def _tree_remove_item(
+        self,
+        tree_widget: QTreeWidget,
+        getter_func: Callable[[], dict[str, list[str]]],
+        setter_func: Callable[[dict[str, list[str]]], None],
+    ):
         current_item = tree_widget.currentItem()
         if current_item:
             text = current_item.text(0)
@@ -212,9 +262,13 @@ class CategoryManagerWidget(QWidget):
                 self,
                 "Remove Item",
                 f"Are you sure you want to remove '{text}'?",
-                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
+                | QMessageBox.No,  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
             )
-            if reply == QMessageBox.Yes:
+            if (
+                reply
+                == QMessageBox.Yes  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
+            ):
                 data = getter_func()
                 if current_item.parent():
                     parent_text = current_item.parent().text(0)
@@ -224,12 +278,21 @@ class CategoryManagerWidget(QWidget):
                 setter_func(data)
                 self._populate_tree(tree_widget, data)
 
-    def _tree_rename_item(self, tree_widget, getter_func, setter_func):
+    def _tree_rename_item(
+        self,
+        tree_widget: QTreeWidget,
+        getter_func: Callable[[], dict[str, list[str]]],
+        setter_func: Callable[[dict[str, list[str]]], None],
+    ):
         current_item = tree_widget.currentItem()
         if current_item:
             old_text = current_item.text(0)
             new_text, ok = QInputDialog.getText(
-                self, "Rename Item", "Enter new name:", QLineEdit.Normal, old_text
+                self,
+                "Rename Item",
+                "Enter new name:",
+                QLineEdit.Normal,  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
+                old_text,
             )
             if ok and new_text and new_text != old_text:
                 data = getter_func()

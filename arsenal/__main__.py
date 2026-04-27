@@ -3,7 +3,11 @@ import sys
 from pathlib import Path
 
 from loguru import logger
-from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PySide6.QtWidgets import (  # pylint: disable=no-name-in-module
+    QApplication,
+    QFileDialog,
+    QMessageBox,
+)
 
 from arsenal import info
 from arsenal.config import ConfigManager, get_log_dir
@@ -77,9 +81,13 @@ def main():
                         None,
                         "Directory Not Empty",
                         f"The selected directory is not empty:\n{directory}\n\nDo you want to use this directory?",
-                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.Yes  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
+                        | QMessageBox.No,  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
                     )
-                    if reply == QMessageBox.No:
+                    if (
+                        reply
+                        == QMessageBox.No  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType,reportAttributeAccessIssue]
+                    ):
                         logger.info(
                             "User chose to select a different directory. Exiting."
                         )

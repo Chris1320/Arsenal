@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings  # pylint: disable=no-name-in-module
 
 
 from arsenal import info

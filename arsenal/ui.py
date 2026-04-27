@@ -4,7 +4,7 @@ import shutil
 import json
 from pathlib import Path
 
-from PySide6.QtWidgets import (
+from PySide6.QtWidgets import (  # pylint: disable=no-name-in-module
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -35,8 +35,8 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
 )
-from PySide6.QtCore import Qt, QThread, QSize
-from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import Qt, QThread, QSize  # pylint: disable=no-name-in-module
+from PySide6.QtGui import QPixmap, QIcon  # pylint: disable=no-name-in-module
 from loguru import logger
 
 from arsenal import info

@@ -1,7 +1,8 @@
 import hashlib
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from blake3 import blake3
+from PySide6.QtCore import QObject, Signal  # pylint: disable=no-name-in-module
 from loguru import logger
 
 
@@ -24,8 +25,8 @@ class HashingWorker(QObject):
             logger.info(f"Started hashing: {self.file_path} using {self.algorithm}")
 
             algo = self.algorithm.lower()
-            if algo == "blake3" and hasattr(hashlib, "blake3"):
-                hasher = hashlib.blake3()
+            if algo == "blake3":
+                hasher = blake3(max_threads=blake3.AUTO)
             elif algo == "sha256":
                 hasher = hashlib.sha256()
             elif algo == "md5":
@@ -41,7 +42,8 @@ class HashingWorker(QObject):
             processed = 0
 
             with open(self.file_path, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
+                # Use 1MB chunks to benefit from blake3 multithreading
+                for chunk in iter(lambda: f.read(1048576), b""):
                     if self._is_cancelled:
                         logger.warning(f"Hashing cancelled for: {self.file_path}")
                         self.error.emit("Cancelled")
