@@ -88,7 +88,7 @@ class VerifyDialog(QDialog):
         hashes = self.entry_data.get("hashes", {})
         self.table.setRowCount(len(hashes))
         for row, (filename, expected) in enumerate(hashes.items()):
-            self.table.setItem(row, 0, QTableWidgetItem(Path(filename).name))
+            self.table.setItem(row, 0, QTableWidgetItem(filename))
             self.table.setItem(row, 1, QTableWidgetItem(expected))
 
             actual_item = QTableWidgetItem("Pending...")
@@ -180,9 +180,13 @@ class EditEntryDialog(QDialog):
         base_dir = Path(self.entry_data.get("_path", ""))
         files_dir = base_dir / "files"
         if files_dir.exists():
-            for f in files_dir.iterdir():
-                if f.is_file():
-                    self.primary_installer_combo.addItem(f.name)
+            for root_dir, _, files in os.walk(files_dir):
+                for f in files:
+                    abs_path = Path(root_dir) / f
+                    rel_path = abs_path.relative_to(files_dir)
+                    self.primary_installer_combo.addItem(
+                        str(rel_path).replace("\\", "/")
+                    )
 
         form_layout.addRow("Name:", self.name_input)
         form_layout.addRow("Version:", self.version_input)
@@ -569,8 +573,17 @@ class AddEntryWidget(QWidget):
         self.screenshot_label = QLabel("0 screenshots selected.")
 
         # File and Hash UI
-        self.file_btn = QPushButton("Select Installation File(s)...")
-        self.file_btn.clicked.connect(self._select_files)
+        self.file_btns_layout = QHBoxLayout()
+        self.add_file_btn = QPushButton("Add File(s)...")
+        self.add_file_btn.clicked.connect(self._add_files)
+        self.add_folder_btn = QPushButton("Add Folder...")
+        self.add_folder_btn.clicked.connect(self._add_folder)
+        self.clear_files_btn = QPushButton("Clear Files")
+        self.clear_files_btn.clicked.connect(self._clear_files)
+        self.file_btns_layout.addWidget(self.add_file_btn)
+        self.file_btns_layout.addWidget(self.add_folder_btn)
+        self.file_btns_layout.addWidget(self.clear_files_btn)
+
         self.file_label = QLabel("No files selected.")
 
         self.primary_installer_combo = QComboBox()
@@ -588,7 +601,7 @@ class AddEntryWidget(QWidget):
         layout.addLayout(image_layout)
         layout.addWidget(self.screenshot_btn)
         layout.addWidget(self.screenshot_label)
-        layout.addWidget(self.file_btn)
+        layout.addLayout(self.file_btns_layout)
         layout.addWidget(self.file_label)
         layout.addWidget(QLabel("Primary Installer:"))
         layout.addWidget(self.primary_installer_combo)
@@ -601,6 +614,7 @@ class AddEntryWidget(QWidget):
         self.icon_path = None
         self.screenshot_paths = []
         self.installer_paths = []
+        self.flattened_files = []
         self.installer_hashes = {}
         self._current_hash_index = 0
 
@@ -707,43 +721,72 @@ class AddEntryWidget(QWidget):
                 f"{len(self.screenshot_paths)} screenshots selected."
             )
 
-    def _select_files(self):
-        """
-        Open file dialog to select multiple installation files, start
-        hashing process, and update the UI accordingly.
-        """
-
-        fnames, _ = QFileDialog.getOpenFileNames(self, "Select Installer(s)")
+    def _add_files(self):
+        fnames, _ = QFileDialog.getOpenFileNames(self, "Select Installer File(s)")
         if fnames:
-            self.installer_paths = [Path(f) for f in fnames]
-            self.file_label.setText(
-                f"{len(self.installer_paths)} file(s) selected (Hashing...)"
-            )
+            self.installer_paths.extend([Path(f) for f in fnames])
+            self._prepare_hashing()
 
-            self.primary_installer_combo.clear()
-            self.primary_installer_combo.addItems(
-                [p.name for p in self.installer_paths]
-            )
+    def _add_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Installer Folder")
+        if folder:
+            self.installer_paths.append(Path(folder))
+            self._prepare_hashing()
 
-            self.progress_bar.show()
-            self.progress_bar.setValue(0)
-            self.submit_btn.setEnabled(False)
-            self.installer_hashes = {}
-            self._current_hash_index = 0
+    def _clear_files(self):
+        if self.hashing_thread and self.hashing_thread.isRunning():
+            self.hashing_worker.cancel()
+        self.installer_paths = []
+        self.flattened_files = []
+        self.installer_hashes = {}
+        self.primary_installer_combo.clear()
+        self.file_label.setText("No files selected.")
+        self.progress_bar.hide()
+        self.submit_btn.setEnabled(True)
 
-            self._hash_next_file()
+    def _prepare_hashing(self):
+        if self.hashing_thread and self.hashing_thread.isRunning():
+            self.hashing_worker.cancel()
+
+        self.flattened_files = []
+        for p in self.installer_paths:
+            if p.is_file():
+                self.flattened_files.append((p, p.name))
+            elif p.is_dir():
+                for root, _, files in os.walk(p):
+                    for f in files:
+                        abs_path = Path(root) / f
+                        rel_path = abs_path.relative_to(p.parent)
+                        self.flattened_files.append(
+                            (abs_path, str(rel_path).replace("\\", "/"))
+                        )
+
+        self.file_label.setText(
+            f"{len(self.installer_paths)} items ({len(self.flattened_files)} files) selected (Hashing...)"
+        )
+
+        self.primary_installer_combo.clear()
+        self.primary_installer_combo.addItems([rel for _, rel in self.flattened_files])
+
+        self.progress_bar.show()
+        self.progress_bar.setValue(0)
+        self.submit_btn.setEnabled(False)
+        self.installer_hashes = {}
+        self._current_hash_index = 0
+
+        self._hash_next_file()
 
     def _hash_next_file(self):
-        if self._current_hash_index < len(self.installer_paths):
-            current_path = self.installer_paths[self._current_hash_index]
+        if self._current_hash_index < len(self.flattened_files):
+            abs_path, rel_path = self.flattened_files[self._current_hash_index]
             self.file_label.setText(
-                f"Hashing File {self._current_hash_index + 1}/{len(self.installer_paths)}: {current_path.name}"
+                f"Hashing File {self._current_hash_index + 1}/{len(self.flattened_files)}: {rel_path}"
             )
             self.progress_bar.setValue(0)
-            self._start_hashing(current_path)
+            self._start_hashing(abs_path)
         else:
             self.file_label.setText(
-                f"{len(self.installer_paths)} file(s) ready to add."
+                f"{len(self.installer_paths)} items ({len(self.flattened_files)} files) ready to add."
             )
             self.progress_bar.hide()
             self.submit_btn.setEnabled(True)
@@ -776,8 +819,9 @@ class AddEntryWidget(QWidget):
 
     def _hash_finished(self, path: str, result_hash: str):
         """Handle completion of hashing, update UI with hash result."""
-        self.installer_hashes[path] = result_hash
-        logger.info(f"Hashing completed for {path}. Hash: {result_hash}")
+        _, rel_path = self.flattened_files[self._current_hash_index]
+        self.installer_hashes[rel_path] = result_hash
+        logger.info(f"Hashing completed for {rel_path}. Hash: {result_hash}")
 
     def _hash_error(self, err: str):
         """Handle hashing errors by updating the UI and continuing."""
@@ -834,9 +878,9 @@ class AddEntryWidget(QWidget):
         os.makedirs(base_dir / "files", exist_ok=True)
 
         file_sizes = {}
-        for p in self.installer_paths:
-            if p.exists():
-                file_sizes[p.name] = p.stat().st_size
+        for abs_path, rel_path in self.flattened_files:
+            if abs_path.exists():
+                file_sizes[rel_path] = abs_path.stat().st_size
 
         entry_data = {
             "entry_version": info.VERSION,
@@ -876,15 +920,23 @@ class AddEntryWidget(QWidget):
         # Handle installation files
         file_operation = self.config_manager.get_file_operation().lower()
         if self.installer_paths:
-            for file_path in self.installer_paths:
-                if file_path.exists():
-                    dest = base_dir / "files" / file_path.name
-                    if file_operation == "move":
-                        logger.info(f"Moving {file_path} to {dest}")
-                        shutil.move(file_path, dest)
-                    else:
-                        logger.info(f"Copying {file_path} to {dest}")
-                        shutil.copy2(file_path, dest)
+            for source_path in self.installer_paths:
+                if source_path.exists():
+                    dest = base_dir / "files" / source_path.name
+                    if source_path.is_file():
+                        if file_operation == "move":
+                            logger.info(f"Moving {source_path} to {dest}")
+                            shutil.move(source_path, dest)
+                        else:
+                            logger.info(f"Copying {source_path} to {dest}")
+                            shutil.copy2(source_path, dest)
+                    elif source_path.is_dir():
+                        if file_operation == "move":
+                            logger.info(f"Moving directory {source_path} to {dest}")
+                            shutil.move(source_path, dest)
+                        else:
+                            logger.info(f"Copying directory {source_path} to {dest}")
+                            shutil.copytree(source_path, dest, dirs_exist_ok=True)
 
         logger.success(f"Entry {name} successfully added.")
         QMessageBox.information(self, "Success", f"Entry '{name}' added successfully!")
@@ -907,6 +959,7 @@ class AddEntryWidget(QWidget):
         self.icon_path = None
         self.screenshot_paths = []
         self.installer_paths = []
+        self.flattened_files = []
         self.installer_hashes = {}
         self.primary_installer_combo.clear()
         self._current_hash_index = 0
