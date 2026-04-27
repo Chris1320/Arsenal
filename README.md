@@ -7,10 +7,14 @@ It allows you to keep track of your installation files, categorize them, and eas
 
 ## Features
 
-- Organize installation files in a structured manner
-- Filter files by name, operating system, category, and more.
-- Add notes and tags to files for better organization
-- Search for files quickly using the search functionality
+- Neatly organize and store installers into a structured, centralized repository called an "Arsenal".
+- Enrich your entries with cover arts, icons, Markdown-supported descriptions, installation notes, and multi-image screenshot galleries.
+- Instantly find software using the real-time search bar and filters.
+- Manage nested application categories, game genres, and supported operating systems.
+- Automatically calculates BLAKE3/SHA-256 hashes of the installation files upon entry creation. Use the "Verify Files" feature later to ensure your installers haven't suffered data degradation.
+- Easily launch the setup directly from the Arsenal browser.
+- Choose whether Arsenal copies or moves your files by default. The app supports migrating your entire Arsenal root repository to a new path.
+- "Open Installation Directory" for quick file access, or cleanly remove entries from the database with optional safe-deletion of the installation files.
 
 ---
 
