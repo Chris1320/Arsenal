@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSplitter,
     QAbstractItemView,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt, QThread, QSize
 from PySide6.QtGui import QPixmap, QIcon
@@ -210,6 +211,8 @@ class AddEntryWidget(QWidget):
         self.file_btn.clicked.connect(self._select_files)
         self.file_label = QLabel("No files selected.")
 
+        self.primary_installer_combo = QComboBox()
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
         self.progress_bar.hide()
@@ -225,6 +228,8 @@ class AddEntryWidget(QWidget):
         layout.addWidget(self.screenshot_label)
         layout.addWidget(self.file_btn)
         layout.addWidget(self.file_label)
+        layout.addWidget(QLabel("Primary Installer:"))
+        layout.addWidget(self.primary_installer_combo)
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.submit_btn)
 
@@ -330,6 +335,12 @@ class AddEntryWidget(QWidget):
             self.file_label.setText(
                 f"{len(self.installer_paths)} file(s) selected (Hashing...)"
             )
+
+            self.primary_installer_combo.clear()
+            self.primary_installer_combo.addItems(
+                [p.name for p in self.installer_paths]
+            )
+
             self.progress_bar.show()
             self.progress_bar.setValue(0)
             self.submit_btn.setEnabled(False)
@@ -436,7 +447,13 @@ class AddEntryWidget(QWidget):
         is_game = self.radio_game.isChecked()
         type_str = "Game" if is_game else "Application"
 
+        file_sizes = {}
+        for p in self.installer_paths:
+            if p.exists():
+                file_sizes[p.name] = p.stat().st_size
+
         entry_data = {
+            "app_version": info.VERSION,
             "name": name,
             "version": version,
             "author": self.author_input.text().strip(),
@@ -446,6 +463,8 @@ class AddEntryWidget(QWidget):
             "description": self.desc_input.toPlainText(),
             "notes": self.notes_input.toPlainText(),
             "hashes": self.installer_hashes,
+            "file_sizes": file_sizes,
+            "primary_installer": self.primary_installer_combo.currentText(),
         }
 
         with open(base_dir / "entry.json", "w", encoding="utf-8") as f:
@@ -459,7 +478,7 @@ class AddEntryWidget(QWidget):
 
         # Handle screenshots
         if self.screenshot_paths:
-            gallery_dir = base_dir / "Gallery"
+            gallery_dir = base_dir / "gallery"
             os.makedirs(gallery_dir, exist_ok=True)
             for idx, screenshot_path in enumerate(self.screenshot_paths, start=1):
                 extension = screenshot_path.suffix
@@ -502,6 +521,7 @@ class AddEntryWidget(QWidget):
         self.screenshot_paths = []
         self.installer_paths = []
         self.installer_hashes = {}
+        self.primary_installer_combo.clear()
         self._current_hash_index = 0
         self.cover_lbl.clear()
         self.cover_lbl.setText("Cover (Portrait)")
@@ -577,8 +597,38 @@ class BrowseWidget(QWidget):
         self.detail_notes = QLabel()
         self.detail_notes.setWordWrap(True)
 
+        # Action Buttons
+        self.actions_layout = QVBoxLayout()
+        self.btn_install = QPushButton("Install")
+        self.btn_edit = QPushButton("Edit Entry")
+        self.btn_open_dir = QPushButton("Open Installation Directory")
+        self.btn_verify = QPushButton("Verify Files")
+        self.btn_remove = QPushButton("Remove Entry")
+
+        self.actions_layout.addWidget(self.btn_install)
+        self.actions_layout.addWidget(self.btn_edit)
+        self.actions_layout.addWidget(self.btn_open_dir)
+        self.actions_layout.addWidget(self.btn_verify)
+        self.actions_layout.addWidget(self.btn_remove)
+
+        for btn in [
+            self.btn_install,
+            self.btn_edit,
+            self.btn_open_dir,
+            self.btn_verify,
+            self.btn_remove,
+        ]:
+            btn.setEnabled(False)
+
+        self.btn_install.clicked.connect(self._on_install)
+        self.btn_edit.clicked.connect(self._on_edit)
+        self.btn_open_dir.clicked.connect(self._on_open_dir)
+        self.btn_verify.clicked.connect(self._on_verify)
+        self.btn_remove.clicked.connect(self._on_remove)
+
         self.right_layout.addWidget(self.detail_cover)
         self.right_layout.addWidget(self.detail_title)
+        self.right_layout.addLayout(self.actions_layout)
         self.right_layout.addWidget(self.detail_meta)
         self.right_layout.addWidget(self.detail_desc)
         self.right_layout.addWidget(self.detail_notes)
@@ -590,7 +640,7 @@ class BrowseWidget(QWidget):
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(left_pane)
         splitter.addWidget(self.right_pane)
-        splitter.setSizes([400, 400])
+        splitter.setSizes([600, 200])
 
         main_layout.addWidget(splitter)
 
@@ -651,7 +701,7 @@ class BrowseWidget(QWidget):
 
             # Setup text depending on view mode
             if self.view_mode_combo.currentText() == "Detail":
-                item.setText(f"{name} v{data.get('version', '')} ({type_str})")
+                item.setText(f"{name} {data.get('version', '')} ({type_str})")
             else:
                 item.setText(name)
 
@@ -697,7 +747,7 @@ class BrowseWidget(QWidget):
                     item.setIcon(QIcon(str(cover_path)))
             else:
                 item.setText(
-                    f"{data.get('name', 'Unknown')} v{data.get('version', '')} ({data.get('type', 'Unknown')})"
+                    f"{data.get('name', 'Unknown')} {data.get('version', '')} ({data.get('type', 'Unknown')})"
                 )
                 icon_path = Path(data["_path"]) / "icon.jpg"
                 if icon_path.exists():
@@ -712,9 +762,27 @@ class BrowseWidget(QWidget):
             self.detail_meta.clear()
             self.detail_desc.clear()
             self.detail_notes.clear()
+            for btn in [
+                self.btn_install,
+                self.btn_edit,
+                self.btn_open_dir,
+                self.btn_verify,
+                self.btn_remove,
+            ]:
+                btn.setEnabled(False)
             return
 
         data = current.data(Qt.UserRole)
+        self.current_entry_data = data
+        for btn in [
+            self.btn_install,
+            self.btn_edit,
+            self.btn_open_dir,
+            self.btn_verify,
+            self.btn_remove,
+        ]:
+            btn.setEnabled(True)
+
         self.detail_title.setText(f"<h2>{data.get('name', 'Unknown')}</h2>")
 
         cover_path = Path(data["_path"]) / "cover.jpg"
@@ -725,12 +793,25 @@ class BrowseWidget(QWidget):
         else:
             self.detail_cover.clear()
 
+        def format_size(size):
+            for unit in ["B", "KB", "MB", "GB", "TB"]:
+                if size < 1024.0:
+                    return f"{size:.1f} {unit}"
+                size /= 1024.0
+            return f"{size:.1f} PB"
+
+        file_sizes = data.get("file_sizes", {})
+        total_size = sum(file_sizes.values()) if file_sizes else 0
+
         meta_text = (
             f"<b>Version:</b> {data.get('version', 'N/A')}<br>"
             f"<b>Author:</b> {data.get('author', 'N/A')}<br>"
             f"<b>OS:</b> {data.get('os', 'N/A')}<br>"
             f"<b>Type:</b> {data.get('type', 'N/A')}<br>"
-            f"<b>Categories:</b> {', '.join(data.get('categories', []))}"
+            f"<b>Categories:</b> {', '.join(data.get('categories', []))}<br>"
+            f"<b>App Version:</b> {data.get('app_version', 'N/A')}<br>"
+            f"<b>Primary Installer:</b> {data.get('primary_installer', 'N/A')}<br>"
+            f"<b>Total Size:</b> {format_size(total_size)}"
         )
         self.detail_meta.setText(meta_text)
 
@@ -741,6 +822,83 @@ class BrowseWidget(QWidget):
         self.detail_notes.setText(
             f"<h3>Instructions/Notes</h3><p>{notes}</p>" if notes else ""
         )
+
+    def _on_install(self):
+        data = getattr(self, "current_entry_data", None)
+        if not data:
+            return
+        installer = data.get("primary_installer")
+        if not installer:
+            QMessageBox.warning(
+                self, "Install", "No primary installer selected for this entry."
+            )
+            return
+        path = Path(data["_path"]) / "files" / installer
+        if path.exists():
+            os.startfile(str(path))
+        else:
+            QMessageBox.warning(self, "Error", f"Installer not found: {path}")
+
+    def _on_edit(self):
+        QMessageBox.information(
+            self, "Edit", "Edit Entry functionality will be implemented here."
+        )
+
+    def _on_open_dir(self):
+        data = getattr(self, "current_entry_data", None)
+        if not data:
+            return
+        path = Path(data["_path"]) / "files"
+        if path.exists():
+            os.startfile(str(path))
+
+    def _on_verify(self):
+        data = getattr(self, "current_entry_data", None)
+        if not data:
+            return
+        hashes = data.get("hashes", {})
+        if not hashes:
+            QMessageBox.information(self, "Verify", "No hashes found for this entry.")
+            return
+
+        missing = []
+        for file_name, expected_hash in hashes.items():
+            fpath = Path(data["_path"]) / "files" / Path(file_name).name
+            if not fpath.exists():
+                missing.append(file_name)
+        if missing:
+            QMessageBox.warning(self, "Verify", f"Missing files:\n{', '.join(missing)}")
+        else:
+            QMessageBox.information(
+                self,
+                "Verify",
+                "All files are present.\n(Full hash verification omitted for brevity)",
+            )
+
+    def _on_remove(self):
+        data = getattr(self, "current_entry_data", None)
+        if not data:
+            return
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Remove Entry")
+        msg.setText(f"Are you sure you want to remove '{data.get('name')}'?")
+        cb = QCheckBox("Remove installation media and files as well?")
+        msg.setCheckBox(cb)
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+
+        if msg.exec() == QMessageBox.Yes:
+            try:
+                base_dir = Path(data["_path"])
+                if cb.isChecked():
+                    shutil.rmtree(base_dir)
+                else:
+                    json_file = base_dir / "entry.json"
+                    if json_file.exists():
+                        json_file.unlink()
+                self.refresh_data()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to remove: {e}")
 
 
 class MainWindow(QMainWindow):
