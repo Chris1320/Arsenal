@@ -1221,12 +1221,18 @@ class BrowseWidget(QWidget):
         self.detail_meta.setText(meta_text)
 
         desc = data.get("description", "")
-        self.detail_desc.setText(f"<h3>Description</h3><p>{desc}</p>" if desc else "")
+        if desc:
+            self.detail_desc.setTextFormat(Qt.MarkdownText)
+            self.detail_desc.setText(f"### Description\n{desc}")
+        else:
+            self.detail_desc.setText("")
 
         notes = data.get("notes", "")
-        self.detail_notes.setText(
-            f"<h3>Instructions/Notes</h3><p>{notes}</p>" if notes else ""
-        )
+        if notes:
+            self.detail_notes.setTextFormat(Qt.MarkdownText)
+            self.detail_notes.setText(f"### Instructions/Notes\n{notes}")
+        else:
+            self.detail_notes.setText("")
 
     def _on_install(self):
         data = getattr(self, "current_entry_data", None)
