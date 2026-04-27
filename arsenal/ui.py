@@ -155,6 +155,256 @@ class VerifyDialog(QDialog):
         self.table.setItem(self.current_index, 2, actual_item)
 
 
+class EditEntryDialog(QDialog):
+    def __init__(self, entry_data, config_manager, metadata_manager, parent=None):
+        super().__init__(parent)
+        self.entry_data = entry_data
+        self.config_manager = config_manager
+        self.metadata_manager = metadata_manager
+        self.setWindowTitle(f"Edit Entry - {entry_data.get('name')}")
+        self.resize(500, 400)
+        self._init_ui()
+        self._populate_data()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+
+        form_layout = QFormLayout()
+        self.name_input = QLineEdit()
+        self.version_input = QLineEdit()
+        self.author_input = QLineEdit()
+        self.os_input = QComboBox()
+        self.os_input.addItems(self.metadata_manager.get_os_list())
+
+        self.primary_installer_combo = QComboBox()
+        base_dir = Path(self.entry_data.get("_path", ""))
+        files_dir = base_dir / "files"
+        if files_dir.exists():
+            for f in files_dir.iterdir():
+                if f.is_file():
+                    self.primary_installer_combo.addItem(f.name)
+
+        form_layout.addRow("Name:", self.name_input)
+        form_layout.addRow("Version:", self.version_input)
+        form_layout.addRow("Author:", self.author_input)
+        form_layout.addRow("OS:", self.os_input)
+        form_layout.addRow("Primary Installer:", self.primary_installer_combo)
+
+        # Categories Setup
+        self.category_dialog = QDialog(self)
+        self.category_dialog.setWindowTitle("Select Categories/Genres")
+        self.category_dialog.resize(400, 500)
+        cat_dlg_layout = QVBoxLayout(self.category_dialog)
+        self.category_list = QTreeWidget()
+        self.category_list.setHeaderHidden(True)
+        self.category_list.itemChanged.connect(self._on_category_item_changed)
+        cat_dlg_layout.addWidget(self.category_list)
+        cat_close_btn = QPushButton("Done")
+        cat_close_btn.clicked.connect(self.category_dialog.accept)
+        cat_dlg_layout.addWidget(cat_close_btn)
+
+        self.category_btn = QPushButton("Select...")
+        self.category_dialog.finished.connect(self._update_category_label)
+        self.category_btn.clicked.connect(self.category_dialog.exec)
+        self.category_label = QLabel("0 selected")
+        cat_layout = QHBoxLayout()
+        cat_layout.addWidget(self.category_btn)
+        cat_layout.addWidget(self.category_label)
+        cat_layout.addStretch()
+        form_layout.addRow("Categories/Genres:", cat_layout)
+
+        # Description Setup
+        self.desc_dialog = QDialog(self)
+        self.desc_dialog.setWindowTitle("Edit Description")
+        self.desc_dialog.resize(700, 500)
+        desc_dlg_layout = QVBoxLayout(self.desc_dialog)
+        self.desc_input = QTextEdit()
+        desc_dlg_layout.addWidget(self.desc_input)
+        desc_close_btn = QPushButton("Done")
+        desc_close_btn.clicked.connect(self.desc_dialog.accept)
+        desc_dlg_layout.addWidget(desc_close_btn)
+
+        self.desc_btn = QPushButton("Edit...")
+        self.desc_dialog.finished.connect(self._update_desc_label)
+        self.desc_btn.clicked.connect(self.desc_dialog.exec)
+        self.desc_label = QLabel("Empty")
+        desc_layout = QHBoxLayout()
+        desc_layout.addWidget(self.desc_btn)
+        desc_layout.addWidget(self.desc_label)
+        desc_layout.addStretch()
+        form_layout.addRow("Description:", desc_layout)
+
+        # Notes Setup
+        self.notes_dialog = QDialog(self)
+        self.notes_dialog.setWindowTitle("Edit Notes")
+        self.notes_dialog.resize(700, 500)
+        notes_dlg_layout = QVBoxLayout(self.notes_dialog)
+        self.notes_input = QTextEdit()
+        notes_dlg_layout.addWidget(self.notes_input)
+        notes_close_btn = QPushButton("Done")
+        notes_close_btn.clicked.connect(self.notes_dialog.accept)
+        notes_dlg_layout.addWidget(notes_close_btn)
+
+        self.notes_btn = QPushButton("Edit...")
+        self.notes_dialog.finished.connect(self._update_notes_label)
+        self.notes_btn.clicked.connect(self.notes_dialog.exec)
+        self.notes_label = QLabel("Empty")
+        notes_layout = QHBoxLayout()
+        notes_layout.addWidget(self.notes_btn)
+        notes_layout.addWidget(self.notes_label)
+        notes_layout.addStretch()
+        form_layout.addRow("Notes:", notes_layout)
+
+        layout.addLayout(form_layout)
+
+        self.save_btn = QPushButton("Save Changes")
+        self.save_btn.clicked.connect(self._save_changes)
+        layout.addWidget(self.save_btn)
+
+    def _populate_data(self):
+        self.name_input.setText(self.entry_data.get("name", ""))
+        self.version_input.setText(self.entry_data.get("version", ""))
+        self.author_input.setText(self.entry_data.get("author", ""))
+        self.os_input.setCurrentText(self.entry_data.get("os", ""))
+        self.primary_installer_combo.setCurrentText(
+            self.entry_data.get("primary_installer", "")
+        )
+        self.desc_input.setPlainText(self.entry_data.get("description", ""))
+        self.notes_input.setPlainText(self.entry_data.get("notes", ""))
+        self._update_desc_label()
+        self._update_notes_label()
+
+        self.category_list.clear()
+        is_game = self.entry_data.get("type") == "Game"
+        data_dict = (
+            self.metadata_manager.get_genres()
+            if is_game
+            else self.metadata_manager.get_categories()
+        )
+        existing_cats = set(self.entry_data.get("categories", []))
+
+        for main_cat, sub_cats in data_dict.items():
+            parent = QTreeWidgetItem(self.category_list)
+            parent.setText(0, main_cat)
+            parent.setFlags(parent.flags() | Qt.ItemIsUserCheckable)
+            parent.setCheckState(
+                0, Qt.Checked if main_cat in existing_cats else Qt.Unchecked
+            )
+
+            for sub_cat in sub_cats:
+                child = QTreeWidgetItem(parent)
+                child.setText(0, sub_cat)
+                child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
+                child_cat_str = f"{main_cat}: {sub_cat}"
+                child.setCheckState(
+                    0, Qt.Checked if child_cat_str in existing_cats else Qt.Unchecked
+                )
+
+        self.category_list.expandAll()
+        self._update_category_label()
+
+    def _on_category_item_changed(self, item: QTreeWidgetItem, column: int):
+        if item.checkState(0) == Qt.Checked:
+            parent = item.parent()
+            if parent:
+                self.category_list.blockSignals(True)
+                parent.setCheckState(0, Qt.Checked)
+                self.category_list.blockSignals(False)
+
+    def _update_category_label(self):
+        selected = 0
+        root_count = self.category_list.topLevelItemCount()
+        for i in range(root_count):
+            parent = self.category_list.topLevelItem(i)
+            if parent.checkState(0) == Qt.Checked:
+                selected += 1
+            for j in range(parent.childCount()):
+                if parent.child(j).checkState(0) == Qt.Checked:
+                    selected += 1
+        self.category_label.setText(f"{selected} selected")
+
+    def _update_desc_label(self):
+        self.desc_label.setText(
+            "Provided" if self.desc_input.toPlainText().strip() else "Empty"
+        )
+
+    def _update_notes_label(self):
+        self.notes_label.setText(
+            "Provided" if self.notes_input.toPlainText().strip() else "Empty"
+        )
+
+    def _save_changes(self):
+        name = self.name_input.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Error", "Name is required.")
+            return
+
+        version = self.version_input.text().strip()
+        os_sys = self.os_input.currentText()
+
+        selected_categories = []
+        root_count = self.category_list.topLevelItemCount()
+        for i in range(root_count):
+            parent = self.category_list.topLevelItem(i)
+            if parent.checkState(0) == Qt.Checked:
+                selected_categories.append(parent.text(0))
+            for j in range(parent.childCount()):
+                child = parent.child(j)
+                if child.checkState(0) == Qt.Checked:
+                    selected_categories.append(f"{parent.text(0)}: {child.text(0)}")
+
+        # Calculate new path if name, version, or OS changed
+        root = self.config_manager.get_arsenal_root()
+        folder_name = f"{name} {version}" if version else name
+        type_folder = (
+            "Games" if self.entry_data.get("type") == "Game" else "Applications"
+        )
+        new_dir = Path(root) / os_sys / type_folder / folder_name
+        old_dir = Path(self.entry_data.get("_path"))
+
+        if new_dir.resolve() != old_dir.resolve():
+            if new_dir.exists():
+                QMessageBox.warning(
+                    self,
+                    "Error",
+                    f"A folder named '{folder_name}' already exists in '{os_sys}/{type_folder}'.",
+                )
+                return
+            try:
+                new_dir.parent.mkdir(parents=True, exist_ok=True)
+                old_dir.rename(new_dir)
+                self.entry_data["_path"] = str(new_dir)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to rename directory:\n{e}")
+                return
+
+        # Update JSON payload
+        self.entry_data["name"] = name
+        self.entry_data["version"] = version
+        self.entry_data["author"] = self.author_input.text().strip()
+        self.entry_data["os"] = os_sys
+        self.entry_data["categories"] = selected_categories
+        self.entry_data["description"] = self.desc_input.toPlainText()
+        self.entry_data["notes"] = self.notes_input.toPlainText()
+        self.entry_data["primary_installer"] = (
+            self.primary_installer_combo.currentText()
+        )
+
+        # We don't want to save '_path' inside the json file itself, so we copy dict
+        save_data = dict(self.entry_data)
+        save_data.pop("_path", None)
+
+        try:
+            with open(new_dir / "entry.json", "w", encoding="utf-8") as f:
+                json.dump(save_data, f, indent=4)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save changes:\n{e}")
+            return
+
+        QMessageBox.information(self, "Success", "Entry updated successfully.")
+        self.accept()
+
+
 class AddEntryWidget(QWidget):
     """
     Widget for adding a new application or game entry to the Arsenal archive.
@@ -222,6 +472,7 @@ class AddEntryWidget(QWidget):
         cat_dlg_layout = QVBoxLayout(self.category_dialog)
         self.category_list = QTreeWidget()
         self.category_list.setHeaderHidden(True)
+        self.category_list.itemChanged.connect(self._on_category_item_changed)
         cat_dlg_layout.addWidget(self.category_list)
         cat_close_btn = QPushButton("Done")
         cat_close_btn.clicked.connect(self.category_dialog.accept)
@@ -391,6 +642,16 @@ class AddEntryWidget(QWidget):
 
         self.category_list.expandAll()
 
+    def _on_category_item_changed(self, item: QTreeWidgetItem, column: int):
+        if item.checkState(0) == Qt.Checked:
+            parent = item.parent()
+            if parent:
+                # Temporarily block signals to avoid infinite loops if we were checking multiple things,
+                # though setting check state will just emit the signal for the parent.
+                self.category_list.blockSignals(True)
+                parent.setCheckState(0, Qt.Checked)
+                self.category_list.blockSignals(False)
+
     def _update_category_label(self):
         selected_categories = 0
         root_count = self.category_list.topLevelItemCount()
@@ -555,21 +816,22 @@ class AddEntryWidget(QWidget):
         version = self.version_input.text().strip()
         folder_name = f"{name} {version}" if version else name
 
-        # <Arsenal_Root>/<OS>/<App_Name> v<Version>/
-        base_dir = Path(root) / os_sys / folder_name
+        is_game = self.radio_game.isChecked()
+        type_str = "Game" if is_game else "Application"
+        type_folder = "Games" if is_game else "Applications"
+
+        # <Arsenal_Root>/<OS>/<Type_Folder>/<App_Name> v<Version>/
+        base_dir = Path(root) / os_sys / type_folder / folder_name
 
         if base_dir.exists():
             QMessageBox.warning(
                 self,
                 "Error",
-                f"The entry '{folder_name}' already exists in '{os_sys}'.",
+                f"The entry '{folder_name}' already exists in '{os_sys}/{type_folder}'.",
             )
             return
 
         os.makedirs(base_dir / "files", exist_ok=True)
-
-        is_game = self.radio_game.isChecked()
-        type_str = "Game" if is_game else "Application"
 
         file_sizes = {}
         for p in self.installer_paths:
@@ -667,9 +929,12 @@ class AddEntryWidget(QWidget):
 
 
 class BrowseWidget(QWidget):
-    def __init__(self, config_manager: ConfigManager):
+    def __init__(
+        self, config_manager: ConfigManager, metadata_manager: MetadataManager
+    ):
         super().__init__()
         self.config_manager = config_manager
+        self.metadata_manager = metadata_manager
         self.entries = []
         self._init_ui()
 
@@ -694,9 +959,13 @@ class BrowseWidget(QWidget):
         self.view_mode_combo.addItems(["Detail", "Grid"])
         self.view_mode_combo.currentTextChanged.connect(self._change_view_mode)
 
+        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.clicked.connect(self.refresh_data)
+
         controls_layout.addWidget(self.search_input)
         controls_layout.addWidget(self.category_filter)
         controls_layout.addWidget(self.view_mode_combo)
+        controls_layout.addWidget(self.refresh_btn)
 
         left_layout.addLayout(controls_layout)
 
@@ -779,20 +1048,26 @@ class BrowseWidget(QWidget):
             for os_dir in Path(root).iterdir():
                 if not os_dir.is_dir():
                     continue
-                for entry_dir in os_dir.iterdir():
-                    if not entry_dir.is_dir():
+                for type_dir in os_dir.iterdir():
+                    if not type_dir.is_dir() or type_dir.name not in (
+                        "Applications",
+                        "Games",
+                    ):
                         continue
-                    json_file = entry_dir / "entry.json"
-                    if json_file.exists():
-                        try:
-                            with open(json_file, "r", encoding="utf-8") as f:
-                                data = json.load(f)
-                            data["_path"] = str(entry_dir)
-                            self.entries.append(data)
-                            for cat in data.get("categories", []):
-                                categories_set.add(cat)
-                        except Exception as e:
-                            logger.error(f"Error reading {json_file}: {e}")
+                    for entry_dir in type_dir.iterdir():
+                        if not entry_dir.is_dir():
+                            continue
+                        json_file = entry_dir / "entry.json"
+                        if json_file.exists():
+                            try:
+                                with open(json_file, "r", encoding="utf-8") as f:
+                                    data = json.load(f)
+                                data["_path"] = str(entry_dir)
+                                self.entries.append(data)
+                                for cat in data.get("categories", []):
+                                    categories_set.add(cat)
+                            except Exception as e:
+                                logger.error(f"Error reading {json_file}: {e}")
 
         # Update category filter
         current_cat = self.category_filter.currentText()
@@ -970,9 +1245,13 @@ class BrowseWidget(QWidget):
             QMessageBox.warning(self, "Error", f"Installer not found: {path}")
 
     def _on_edit(self):
-        QMessageBox.information(
-            self, "Edit", "Edit Entry functionality will be implemented here."
-        )
+        data = getattr(self, "current_entry_data", None)
+        if not data:
+            return
+
+        dialog = EditEntryDialog(data, self.config_manager, self.metadata_manager, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.refresh_data()
 
     def _on_open_dir(self):
         data = getattr(self, "current_entry_data", None)
@@ -1050,7 +1329,7 @@ class MainWindow(QMainWindow):
         # Stacked Widget
         self.stacked_widget = QStackedWidget()
 
-        self.browse_widget = BrowseWidget(self.config_manager)
+        self.browse_widget = BrowseWidget(self.config_manager, self.metadata_manager)
 
         self.add_widget = AddEntryWidget(self.config_manager, self.metadata_manager)
 
@@ -1124,6 +1403,9 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(sidebar, 1)
         main_layout.addWidget(self.stacked_widget, 4)
+
+        # Initial population
+        self.browse_widget.refresh_data()
 
     def _change_root(self):
         directory = QFileDialog.getExistingDirectory(
