@@ -734,8 +734,12 @@ class AddEntryWidget(QWidget):
             self._prepare_hashing()
 
     def _clear_files(self):
-        if self.hashing_thread and self.hashing_thread.isRunning():
-            self.hashing_worker.cancel()
+        try:
+            if self.hashing_thread and self.hashing_thread.isRunning():
+                self.hashing_worker.cancel()
+        except RuntimeError:
+            pass  # Object already deleted
+
         self.installer_paths = []
         self.flattened_files = []
         self.installer_hashes = {}
@@ -745,8 +749,11 @@ class AddEntryWidget(QWidget):
         self.submit_btn.setEnabled(True)
 
     def _prepare_hashing(self):
-        if self.hashing_thread and self.hashing_thread.isRunning():
-            self.hashing_worker.cancel()
+        try:
+            if self.hashing_thread and self.hashing_thread.isRunning():
+                self.hashing_worker.cancel()
+        except RuntimeError:
+            pass  # Object already deleted
 
         self.flattened_files = []
         for p in self.installer_paths:
@@ -810,8 +817,12 @@ class AddEntryWidget(QWidget):
 
         self.hashing_thread.finished.connect(self.hashing_thread.deleteLater)
         self.hashing_thread.finished.connect(self._on_thread_finished)
+        self.hashing_thread.destroyed.connect(self._on_thread_destroyed)
 
         self.hashing_thread.start()
+
+    def _on_thread_destroyed(self):
+        self.hashing_thread = None
 
     def _on_thread_finished(self):
         self._current_hash_index += 1
