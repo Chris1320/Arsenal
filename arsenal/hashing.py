@@ -10,9 +10,10 @@ class HashingWorker(QObject):
     finished = Signal(str, str)
     error = Signal(str)
 
-    def __init__(self, file_path: Path):
+    def __init__(self, file_path: Path, algorithm: str = "BLAKE3"):
         super().__init__()
         self.file_path = file_path
+        self.algorithm = algorithm
         self._is_cancelled = False
 
     def cancel(self):
@@ -20,12 +21,19 @@ class HashingWorker(QObject):
 
     def run(self):
         try:
-            logger.info(f"Started hashing: {self.file_path}")
-            # Use BLAKE3 if available, otherwise fallback to SHA-256
-            if hasattr(hashlib, "blake3"):
+            logger.info(f"Started hashing: {self.file_path} using {self.algorithm}")
+
+            algo = self.algorithm.lower()
+            if algo == "blake3" and hasattr(hashlib, "blake3"):
                 hasher = hashlib.blake3()
-                algo = "blake3"
+            elif algo == "sha256":
+                hasher = hashlib.sha256()
+            elif algo == "md5":
+                hasher = hashlib.md5()
+            elif algo == "sha1":
+                hasher = hashlib.sha1()
             else:
+                # Fallback to sha256 if selected algorithm is not available or unknown
                 hasher = hashlib.sha256()
                 algo = "sha256"
 

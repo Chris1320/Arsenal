@@ -31,6 +31,9 @@ from PySide6.QtWidgets import (
     QSplitter,
     QAbstractItemView,
     QCheckBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
 )
 from PySide6.QtCore import Qt, QThread, QSize
 from PySide6.QtGui import QPixmap, QIcon
@@ -41,6 +44,115 @@ from arsenal.config import ConfigManager
 from arsenal.metadata import MetadataManager
 from arsenal.hashing import HashingWorker
 from arsenal.category_manager import CategoryManagerWidget
+
+
+class VerifyDialog(QDialog):
+    def __init__(self, entry_data, parent=None):
+        super().__init__(parent)
+        self.entry_data = entry_data
+        self.setWindowTitle(f"Verify Files - {entry_data.get('name')}")
+        self.resize(700, 400)
+
+        layout = QVBoxLayout(self)
+
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["File", "Expected Hash", "Actual Hash"])
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeToContents
+        )
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        layout.addWidget(self.table)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
+        self.status_lbl = QLabel("Initializing...")
+        layout.addWidget(self.status_lbl)
+
+        self.close_btn = QPushButton("Close")
+        self.close_btn.setEnabled(False)
+        self.close_btn.clicked.connect(self.accept)
+        layout.addWidget(self.close_btn)
+
+        self.files_to_hash = list(self.entry_data.get("hashes", {}).keys())
+        self.current_index = 0
+        self.hashing_thread = None
+        self.hashing_worker = None
+
+        self._populate_table()
+        self._hash_next_file()
+
+    def _populate_table(self):
+        hashes = self.entry_data.get("hashes", {})
+        self.table.setRowCount(len(hashes))
+        for row, (filename, expected) in enumerate(hashes.items()):
+            self.table.setItem(row, 0, QTableWidgetItem(Path(filename).name))
+            self.table.setItem(row, 1, QTableWidgetItem(expected))
+
+            actual_item = QTableWidgetItem("Pending...")
+            self.table.setItem(row, 2, actual_item)
+
+    def _hash_next_file(self):
+        if self.current_index < len(self.files_to_hash):
+            file_key = self.files_to_hash[self.current_index]
+            filename = Path(file_key).name
+            base_dir = Path(self.entry_data.get("_path"))
+            fpath = base_dir / "files" / filename
+
+            self.status_lbl.setText(f"Verifying {filename}...")
+            self.progress_bar.setValue(0)
+
+            if not fpath.exists():
+                self._hash_finished(str(fpath), "FILE NOT FOUND")
+                return
+
+            algo = self.entry_data.get("hashing_algorithm", "BLAKE3")
+
+            self.hashing_thread = QThread()
+            self.hashing_worker = HashingWorker(fpath, algo)
+            self.hashing_worker.moveToThread(self.hashing_thread)
+
+            self.hashing_thread.started.connect(self.hashing_worker.run)
+            self.hashing_worker.progress.connect(self.progress_bar.setValue)
+            self.hashing_worker.finished.connect(self._hash_finished)
+            self.hashing_worker.error.connect(self._hash_error)
+
+            self.hashing_worker.finished.connect(self.hashing_thread.quit)
+            self.hashing_worker.finished.connect(self.hashing_worker.deleteLater)
+            self.hashing_worker.error.connect(self.hashing_thread.quit)
+            self.hashing_worker.error.connect(self.hashing_worker.deleteLater)
+
+            self.hashing_thread.finished.connect(self.hashing_thread.deleteLater)
+            self.hashing_thread.finished.connect(self._on_thread_finished)
+
+            self.hashing_thread.start()
+        else:
+            self.status_lbl.setText("Verification complete.")
+            self.progress_bar.setValue(100)
+            self.close_btn.setEnabled(True)
+
+    def _on_thread_finished(self):
+        self.current_index += 1
+        self._hash_next_file()
+
+    def _hash_finished(self, path: str, result_hash: str):
+        file_key = self.files_to_hash[self.current_index]
+        expected_hash = self.entry_data.get("hashes", {}).get(file_key)
+
+        actual_item = QTableWidgetItem(result_hash)
+        if result_hash == expected_hash:
+            actual_item.setForeground(Qt.green)
+        else:
+            actual_item.setForeground(Qt.red)
+
+        self.table.setItem(self.current_index, 2, actual_item)
+
+    def _hash_error(self, err: str):
+        actual_item = QTableWidgetItem(f"ERROR: {err}")
+        actual_item.setForeground(Qt.red)
+        self.table.setItem(self.current_index, 2, actual_item)
 
 
 class AddEntryWidget(QWidget):
@@ -87,7 +199,7 @@ class AddEntryWidget(QWidget):
         type_layout.addWidget(self.radio_game)
         type_group_box.setLayout(type_layout)
 
-        self.radio_app.toggled.connect(self._update_category_list)
+        self.radio_app.toggled.connect(self._on_entry_type_changed)
 
         layout.addWidget(type_group_box)
 
@@ -125,7 +237,6 @@ class AddEntryWidget(QWidget):
         cat_layout.addStretch()
 
         form_layout.addRow("Categories/Genres:", cat_layout)
-        self._update_category_list()
 
         # Description Dialog Setup
         self.desc_dialog = QDialog(self)
@@ -241,6 +352,18 @@ class AddEntryWidget(QWidget):
         self.installer_paths = []
         self.installer_hashes = {}
         self._current_hash_index = 0
+
+        self._on_entry_type_changed()
+
+    def _on_entry_type_changed(self):
+        self._update_category_list()
+        is_game = self.radio_game.isChecked()
+        self.cover_lbl.setVisible(is_game)
+        self.cover_btn.setVisible(is_game)
+        if not is_game:
+            self.cover_path = None
+            self.cover_lbl.clear()
+            self.cover_lbl.setText("Cover (Portrait)")
 
     def _update_category_list(self):
         """
@@ -367,7 +490,8 @@ class AddEntryWidget(QWidget):
     def _start_hashing(self, path: Path):
         """Start the hashing process in a separate thread to avoid blocking the UI."""
         self.hashing_thread = QThread()
-        self.hashing_worker = HashingWorker(path)
+        algo = self.config_manager.get_hashing_algorithm()
+        self.hashing_worker = HashingWorker(path, algo)
         self.hashing_worker.moveToThread(self.hashing_thread)
 
         self.hashing_thread.started.connect(self.hashing_worker.run)
@@ -453,7 +577,7 @@ class AddEntryWidget(QWidget):
                 file_sizes[p.name] = p.stat().st_size
 
         entry_data = {
-            "app_version": info.VERSION,
+            "entry_version": info.VERSION,
             "name": name,
             "version": version,
             "author": self.author_input.text().strip(),
@@ -462,6 +586,7 @@ class AddEntryWidget(QWidget):
             "categories": selected_categories,
             "description": self.desc_input.toPlainText(),
             "notes": self.notes_input.toPlainText(),
+            "hashing_algorithm": self.config_manager.get_hashing_algorithm(),
             "hashes": self.installer_hashes,
             "file_sizes": file_sizes,
             "primary_installer": self.primary_installer_combo.currentText(),
@@ -743,8 +868,13 @@ class BrowseWidget(QWidget):
             if mode == "Grid":
                 item.setText(data.get("name", "Unknown"))
                 cover_path = Path(data["_path"]) / "cover.jpg"
+                icon_path = Path(data["_path"]) / "icon.jpg"
                 if cover_path.exists():
                     item.setIcon(QIcon(str(cover_path)))
+                elif icon_path.exists():
+                    item.setIcon(QIcon(str(icon_path)))
+                else:
+                    item.setIcon(QIcon())
             else:
                 item.setText(
                     f"{data.get('name', 'Unknown')} {data.get('version', '')} ({data.get('type', 'Unknown')})"
@@ -809,7 +939,7 @@ class BrowseWidget(QWidget):
             f"<b>OS:</b> {data.get('os', 'N/A')}<br>"
             f"<b>Type:</b> {data.get('type', 'N/A')}<br>"
             f"<b>Categories:</b> {', '.join(data.get('categories', []))}<br>"
-            f"<b>App Version:</b> {data.get('app_version', 'N/A')}<br>"
+            f"<b>Entry Version:</b> {data.get('entry_version', 'N/A')}<br>"
             f"<b>Primary Installer:</b> {data.get('primary_installer', 'N/A')}<br>"
             f"<b>Total Size:</b> {format_size(total_size)}"
         )
@@ -861,19 +991,8 @@ class BrowseWidget(QWidget):
             QMessageBox.information(self, "Verify", "No hashes found for this entry.")
             return
 
-        missing = []
-        for file_name, expected_hash in hashes.items():
-            fpath = Path(data["_path"]) / "files" / Path(file_name).name
-            if not fpath.exists():
-                missing.append(file_name)
-        if missing:
-            QMessageBox.warning(self, "Verify", f"Missing files:\n{', '.join(missing)}")
-        else:
-            QMessageBox.information(
-                self,
-                "Verify",
-                "All files are present.\n(Full hash verification omitted for brevity)",
-            )
+        dialog = VerifyDialog(data, self)
+        dialog.exec()
 
     def _on_remove(self):
         data = getattr(self, "current_entry_data", None)
@@ -959,6 +1078,21 @@ class MainWindow(QMainWindow):
         file_op_layout.addWidget(self.file_op_combo)
         file_op_layout.addStretch()
         settings_layout.addLayout(file_op_layout)
+
+        # Hashing Algorithm Setting
+        hash_algo_layout = QHBoxLayout()
+        hash_algo_layout.addWidget(QLabel("Hashing Algorithm:"))
+        self.hash_algo_combo = QComboBox()
+        self.hash_algo_combo.addItems(["BLAKE3", "SHA256", "MD5", "SHA1"])
+        self.hash_algo_combo.setCurrentText(
+            self.config_manager.get_hashing_algorithm().upper()
+        )
+        self.hash_algo_combo.currentTextChanged.connect(
+            self.config_manager.set_hashing_algorithm
+        )
+        hash_algo_layout.addWidget(self.hash_algo_combo)
+        hash_algo_layout.addStretch()
+        settings_layout.addLayout(hash_algo_layout)
 
         settings_layout.addWidget(
             QLabel("Metadata Management (OS, Categories, Genres)")

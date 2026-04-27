@@ -47,3 +47,10 @@ class ConfigManager:
     def set_file_operation(self, operation: str):
         self.settings.setValue("file_operation", operation)
         self.settings.sync()
+
+    def get_hashing_algorithm(self) -> str:
+        return str(self.settings.value("hashing_algorithm", "BLAKE3"))
+
+    def set_hashing_algorithm(self, algo: str):
+        self.settings.setValue("hashing_algorithm", algo)
+        self.settings.sync()
