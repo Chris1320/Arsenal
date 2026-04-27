@@ -1,0 +1,100 @@
+---
+name: Build
+permissions:
+    contents: write
+
+on:
+    push:
+        branches:
+            - main
+
+jobs:
+    build-windows:
+        runs-on: windows-latest
+        strategy:
+            matrix:
+                python-version:
+                    - "3.14"
+
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+                  lfs: true
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v5
+              with:
+                  version: "0.11.1"
+                  enable-cache: true
+                  cache-dependency-glob: "uv.lock"
+
+            - name: Set up Python ${{ matrix.python-version }}
+              run: uv python install ${{ matrix.python-version }}
+
+            - name: Install project
+              run: uv sync --group dev
+
+            - name: Detect version bump
+              id: version_check
+              shell: pwsh
+              run: |
+                  $currentVersion = (uv run -q python -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])").Trim()
+                  $beforeSha = "${{ github.event.before }}"
+                  $previousVersion = ""
+
+                  if ($beforeSha -and $beforeSha -ne "0000000000000000000000000000000000000000") {
+                      $oldPyproject = git show "$beforeSha`:pyproject.toml" 2>$null
+
+                      if ($LASTEXITCODE -eq 0 -and $oldPyproject) {
+                          $oldPyproject | Out-File -FilePath old_pyproject.toml -Encoding utf8
+                          $previousVersion = (uv run -q python -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('old_pyproject.toml').read_text(encoding='utf-8'))['project']['version'])").Trim()
+                          Remove-Item old_pyproject.toml -ErrorAction SilentlyContinue
+                      }
+                  }
+
+                  $versionBumped = if ($previousVersion -and $previousVersion -ne $currentVersion) { "true" } else { "false" }
+
+                  "current_version=$currentVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+                  "previous_version=$previousVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+                  "version_bumped=$versionBumped" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+            - name: Build standalone application
+              if: steps.version_check.outputs.version_bumped == 'true'
+              run: >
+                  uv run nuitka --mode=standalone --python-flag="-m" --windows-console-mode=attach --output-dir=./build-nuitka --include-data-dir="./data=data" --noinclude-data-files="data/logs/*.txt" --enable-plugin=pyside6 --assume-yes-for-downloads arsenal
+
+            - name: Create ZIP package
+              if: steps.version_check.outputs.version_bumped == 'true'
+              shell: pwsh
+              run: >
+                  Compress-Archive
+                  -Path ./build-nuitka/arsenal.dist/*
+                  -DestinationPath ./build-nuitka/arsenal-v${{ steps.version_check.outputs.current_version }}-windows.zip
+                  -Force
+
+            - name: Generate release notes
+              if: steps.version_check.outputs.version_bumped == 'true'
+              shell: pwsh
+              run: |
+                  $beforeSha = "${{ github.event.before }}"
+                  $releaseNotes = "release-notes.md"
+
+                  "## Changes" | Out-File -FilePath $releaseNotes -Encoding utf8
+                  "" | Out-File -FilePath $releaseNotes -Append -Encoding utf8
+
+                  if ($beforeSha -and $beforeSha -ne "0000000000000000000000000000000000000000") {
+                      git log --pretty=format:"- %h %s" "$beforeSha..${{ github.sha }}" | Out-File -FilePath $releaseNotes -Append -Encoding utf8
+                  }
+                  else {
+                      "- Initial release from automated workflow." | Out-File -FilePath $releaseNotes -Append -Encoding utf8
+                  }
+
+            - name: Create GitHub release
+              if: steps.version_check.outputs.version_bumped == 'true'
+              uses: softprops/action-gh-release@v2
+              with:
+                  name: v${{ steps.version_check.outputs.current_version }}
+                  tag_name: v${{ steps.version_check.outputs.current_version }}
+                  body_path: release-notes.md
+                  files: build-nuitka/arsenal-v${{ steps.version_check.outputs.current_version }}-windows.zip

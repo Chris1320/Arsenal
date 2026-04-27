@@ -1,0 +1,49 @@
+---
+name: Codebase Style
+permissions:
+    contents: read
+    pull-requests: read
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+    workflow_dispatch:
+
+jobs:
+    lint:
+        runs-on: ubuntu-latest
+        env:
+            target_dirs: ./arsenal ./tests
+
+        strategy:
+            matrix:
+                python-version:
+                    - "3.14"
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v5
+              with:
+                  version: "0.11.1"
+                  enable-cache: true
+                  cache-dependency-glob: "uv.lock"
+
+            - name: Set up Python ${{ matrix.python-version }}
+              run: uv python install ${{ matrix.python-version }}
+
+            - name: Install project
+              run: uv sync --group dev
+
+            - name: Lint Codebase using pylint
+              run: uv run pylint --fail-under=9 $target_dirs
+
+            - name: Check coding style using black
+              run: uv run black --check --verbose $target_dirs
+
+            - name: Check imports organization using isort
+              run: uv run isort --check-only --diff --profile black $target_dirs
