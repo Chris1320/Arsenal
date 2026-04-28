@@ -740,36 +740,101 @@ class AddEntryWidget(QWidget):
         fnames, _ = QFileDialog.getOpenFileNames(self, "Select Installer File(s)")
         if fnames:
             self.installer_paths.extend([Path(f) for f in fnames])
-            self._prepare_hashing()
+            self._add_to_hashing_queue()
 
     def _add_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Installer Folder")
         if folder:
             self.installer_paths.append(Path(folder))
-            self._prepare_hashing()
+            self._add_to_hashing_queue()
+
+    def _add_to_hashing_queue(self):
+        self._rebuild_file_list()
+        self.file_label.setText(
+            f"{len(self.installer_paths)} items ({len(self.flattened_files)} files) in queue"
+        )
+        self.progress_bar.show()
+        self.submit_btn.setEnabled(False)
+
+        is_running = False
+        try:
+            if self.hashing_thread and self.hashing_thread.isRunning():
+                is_running = True
+        except RuntimeError:
+            pass
+
+        if not is_running:
+            self._hash_next_file()
 
     def _clear_files(self):
-        try:
-            if self.hashing_thread and self.hashing_thread.isRunning():
-                self.hashing_worker.cancel()
-        except RuntimeError:
-            pass  # Object already deleted
+        if not self.installer_paths:
+            return
 
-        self.installer_paths = []
-        self.flattened_files = []
-        self.installer_hashes = {}
-        self.primary_installer_combo.clear()
-        self.file_label.setText("No files selected.")
-        self.progress_bar.hide()
-        self.submit_btn.setEnabled(True)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Remove Selected Files")
+        dialog.resize(400, 300)
+        layout = QVBoxLayout(dialog)
 
-    def _prepare_hashing(self):
-        try:
-            if self.hashing_thread and self.hashing_thread.isRunning():
-                self.hashing_worker.cancel()
-        except RuntimeError:
-            pass  # Object already deleted
+        list_widget = QListWidget()
+        for idx, path in enumerate(self.installer_paths):
+            item = QListWidgetItem(str(path))
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+            list_widget.addItem(item)
 
+        layout.addWidget(list_widget)
+
+        btn_box = QHBoxLayout()
+        btn_remove = QPushButton("Remove Checked")
+        btn_clear_all = QPushButton("Clear All")
+        btn_cancel = QPushButton("Cancel")
+        btn_box.addWidget(btn_remove)
+        btn_box.addWidget(btn_clear_all)
+        btn_box.addWidget(btn_cancel)
+        layout.addLayout(btn_box)
+
+        def _on_remove():
+            dialog.done(1)
+
+        def _on_clear_all():
+            for i in range(list_widget.count()):
+                list_widget.item(i).setCheckState(Qt.Checked)
+            dialog.done(1)
+
+        btn_remove.clicked.connect(_on_remove)
+        btn_clear_all.clicked.connect(_on_clear_all)
+        btn_cancel.clicked.connect(dialog.reject)
+
+        if dialog.exec() == 1:
+            checked_indices = []
+            for i in range(list_widget.count()):
+                if list_widget.item(i).checkState() == Qt.Checked:
+                    checked_indices.append(i)
+
+            if checked_indices:
+                # Remove in reverse order
+                for i in sorted(checked_indices, reverse=True):
+                    self.installer_paths.pop(i)
+
+                if not self.installer_paths:
+                    try:
+                        if self.hashing_thread and self.hashing_thread.isRunning():
+                            if self.hashing_worker:
+                                self.hashing_worker.cancel()
+                            self.hashing_thread.quit()
+                            self.hashing_thread.wait()
+                    except RuntimeError:
+                        pass
+                    self.flattened_files = []
+                    self.installer_hashes = {}
+                    self.primary_installer_combo.clear()
+                    self.file_label.setText("No files selected.")
+                    self.progress_bar.hide()
+                    self.submit_btn.setEnabled(True)
+                else:
+                    self._prepare_hashing()
+
+    def _rebuild_file_list(self):
         self.flattened_files = []
         for p in self.installer_paths:
             if p.is_file():
@@ -783,22 +848,47 @@ class AddEntryWidget(QWidget):
                             (abs_path, str(rel_path).replace("\\", "/"))
                         )
 
+        self.primary_installer_combo.clear()
+        self.primary_installer_combo.addItems([rel for _, rel in self.flattened_files])
+
+        # Keep valid hashes, remove obsolete ones
+        valid_rel_paths = set(rel for _, rel in self.flattened_files)
+        self.installer_hashes = {
+            k: v for k, v in self.installer_hashes.items() if k in valid_rel_paths
+        }
+
+    def _prepare_hashing(self):
+        # Only stop current hashing if we are doing a destructive prepare (e.g. clear)
+        try:
+            if self.hashing_thread and self.hashing_thread.isRunning():
+                if self.hashing_worker:
+                    self.hashing_worker.cancel()
+                self.hashing_thread.quit()
+                self.hashing_thread.wait()
+        except RuntimeError:
+            pass  # Object already deleted
+
+        self._rebuild_file_list()
+
         self.file_label.setText(
             f"{len(self.installer_paths)} items ({len(self.flattened_files)} files) selected (Hashing...)"
         )
 
-        self.primary_installer_combo.clear()
-        self.primary_installer_combo.addItems([rel for _, rel in self.flattened_files])
-
         self.progress_bar.show()
         self.progress_bar.setValue(0)
         self.submit_btn.setEnabled(False)
-        self.installer_hashes = {}
         self._current_hash_index = 0
 
         self._hash_next_file()
 
     def _hash_next_file(self):
+        while self._current_hash_index < len(self.flattened_files):
+            abs_path, rel_path = self.flattened_files[self._current_hash_index]
+            if rel_path in self.installer_hashes:
+                self._current_hash_index += 1
+            else:
+                break
+
         if self._current_hash_index < len(self.flattened_files):
             abs_path, rel_path = self.flattened_files[self._current_hash_index]
             self.file_label.setText(
