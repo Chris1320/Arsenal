@@ -35,8 +35,13 @@ from PySide6.QtWidgets import (  # pylint: disable=no-name-in-module
     QTableWidgetItem,
     QHeaderView,
 )
-from PySide6.QtCore import Qt, QThread, QSize  # pylint: disable=no-name-in-module
-from PySide6.QtGui import QPixmap, QIcon  # pylint: disable=no-name-in-module
+from PySide6.QtCore import (
+    Qt,
+    QThread,
+    QSize,
+    Signal,
+)  # pylint: disable=no-name-in-module
+from PySide6.QtGui import QPixmap, QIcon, QImage  # pylint: disable=no-name-in-module
 from loguru import logger
 
 from arsenal import info
@@ -992,6 +997,39 @@ class AddEntryWidget(QWidget):
         self.category_label.setText("0 selected")
 
 
+class ImageLoaderWorker(QThread):
+    # Emits QListWidgetItem and QImage (or None if failed)
+    image_loaded = Signal(object, object)
+
+    def __init__(self, loads: list, parent=None):
+        """
+        loads: list of tuples (QListWidgetItem, str path)
+        """
+        super().__init__(parent)
+        self.loads = loads
+        self._is_cancelled = False
+
+    def run(self):
+        for item, paths in self.loads:
+            if self._is_cancelled:
+                break
+
+            loaded = False
+            for path in paths:
+                if Path(path).exists():
+                    image = QImage(str(path))
+                    if not image.isNull():
+                        self.image_loaded.emit(item, image)
+                        loaded = True
+                        break
+
+            if not loaded:
+                self.image_loaded.emit(item, None)
+
+    def cancel(self):
+        self._is_cancelled = True
+
+
 class BrowseWidget(QWidget):
     def __init__(
         self, config_manager: ConfigManager, metadata_manager: MetadataManager
@@ -1146,6 +1184,11 @@ class BrowseWidget(QWidget):
         self._populate_list()
 
     def _populate_list(self):
+        if hasattr(self, "_image_worker") and self._image_worker is not None:
+            self._image_worker.cancel()
+            self._image_worker.wait()
+            self._image_worker = None
+
         self.list_widget.clear()
         search_text = self.search_input.text().lower()
         cat_text = self.category_filter.currentText()
@@ -1162,25 +1205,6 @@ class BrowseWidget(QWidget):
                 continue
 
             item = QListWidgetItem()
-
-            # Setup text depending on view mode
-            if self.view_mode_combo.currentText() == "Detail":
-                item.setText(f"{name} {data.get('version', '')} ({type_str})")
-            else:
-                item.setText(name)
-
-            # Display Icon or Cover
-            icon_path = Path(data["_path"]) / "icon.jpg"
-            cover_path = Path(data["_path"]) / "cover.jpg"
-
-            if self.view_mode_combo.currentText() == "Grid" and cover_path.exists():
-                item.setIcon(QIcon(str(cover_path)))
-            elif icon_path.exists():
-                item.setIcon(QIcon(str(icon_path)))
-            else:
-                # Placeholder icon logic or leave blank
-                pass
-
             item.setData(Qt.UserRole, data)
             self.list_widget.addItem(item)
 
@@ -1192,37 +1216,63 @@ class BrowseWidget(QWidget):
     def _change_view_mode(self, mode: str):
         if mode == "Grid":
             self.list_widget.setViewMode(QListWidget.IconMode)
+            self.list_widget.setMovement(QListWidget.Static)
             self.list_widget.setIconSize(QSize(120, 180))
+            self.list_widget.setGridSize(QSize(140, 220))
             self.list_widget.setResizeMode(QListWidget.Adjust)
             self.list_widget.setWordWrap(True)
+            self.list_widget.setUniformItemSizes(True)
         else:
             self.list_widget.setViewMode(QListWidget.ListMode)
+            self.list_widget.setMovement(QListWidget.Static)
             self.list_widget.setIconSize(QSize(48, 48))
+            self.list_widget.setGridSize(QSize())  # Reset grid size
             self.list_widget.setResizeMode(QListWidget.Fixed)
+            self.list_widget.setWordWrap(False)
+            self.list_widget.setUniformItemSizes(False)
+
+        if hasattr(self, "_image_worker") and self._image_worker is not None:
+            self._image_worker.cancel()
+            self._image_worker.wait()
+            self._image_worker = None
+
+        image_loads = []
+
+        # Placeholder to ensure layout calculates correct bounds initially
+        placeholder = QPixmap(120, 180)
+        placeholder.fill(Qt.transparent)
+        placeholder_icon = QIcon(placeholder)
+
+        list_placeholder = QPixmap(48, 48)
+        list_placeholder.fill(Qt.transparent)
+        list_placeholder_icon = QIcon(list_placeholder)
 
         # Re-apply texts if mode changed without repopulating entirely
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             data = item.data(Qt.UserRole)
+
             if mode == "Grid":
+                item.setIcon(placeholder_icon)
                 item.setText(data.get("name", "Unknown"))
                 cover_path = Path(data["_path"]) / "cover.jpg"
                 icon_path = Path(data["_path"]) / "icon.jpg"
-                if cover_path.exists():
-                    item.setIcon(QIcon(str(cover_path)))
-                elif icon_path.exists():
-                    item.setIcon(QIcon(str(icon_path)))
-                else:
-                    item.setIcon(QIcon())
+                image_loads.append((item, [str(cover_path), str(icon_path)]))
             else:
+                item.setIcon(list_placeholder_icon)
                 item.setText(
                     f"{data.get('name', 'Unknown')} {data.get('version', '')} ({data.get('type', 'Unknown')})"
                 )
                 icon_path = Path(data["_path"]) / "icon.jpg"
-                if icon_path.exists():
-                    item.setIcon(QIcon(str(icon_path)))
-                else:
-                    item.setIcon(QIcon())
+                image_loads.append((item, [str(icon_path)]))
+
+        self._image_worker = ImageLoaderWorker(image_loads, parent=self)
+        self._image_worker.image_loaded.connect(self._on_image_loaded)
+        self._image_worker.start()
+
+    def _on_image_loaded(self, item, image):
+        if image is not None:
+            item.setIcon(QIcon(QPixmap.fromImage(image)))
 
     def _on_item_selected(self, current: QListWidgetItem, previous):
         if not current:
