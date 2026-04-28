@@ -5,12 +5,11 @@ _Manage your installation files easily_.
 Arsenal is a tool to organize and manage your installation files, such as .exe, .msi, .dmg, .pkg, and more.
 It allows you to keep track of your installation files, categorize them, and easily access them when needed.
 
-<img width="1920" height="1020" alt="image" src="https://github.com/user-attachments/assets/19929679-bab1-4de4-b8ca-03c1d8dcdb9f" />
+<img width="480" height="255" alt="image" src="https://github.com/user-attachments/assets/19929679-bab1-4de4-b8ca-03c1d8dcdb9f" />
 
-<img width="1920" height="1020" alt="image" src="https://github.com/user-attachments/assets/27a28c1d-7759-4b88-97f1-f0bf6ecf6e25" />
+<img width="480" height="255" alt="image" src="https://github.com/user-attachments/assets/27a28c1d-7759-4b88-97f1-f0bf6ecf6e25" />
 
-<img width="1920" height="1020" alt="image" src="https://github.com/user-attachments/assets/324ff16d-843e-441e-86cf-c3da0ad0a55a" />
-
+<img width="480" height="255" alt="image" src="https://github.com/user-attachments/assets/324ff16d-843e-441e-86cf-c3da0ad0a55a" />
 
 ## Features
 
@@ -26,7 +25,7 @@ It allows you to keep track of your installation files, categorize them, and eas
 ---
 
 > [!CAUTION]
-> **Artificial Intelligence Usage Notice**
+> **Artificial Intelligence Usage Disclosure**
 >
 > The current version of this project has been developed with the
 > assistance of artificial intelligence (AI) tools, since I need
