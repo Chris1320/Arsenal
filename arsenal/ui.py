@@ -77,8 +77,7 @@ class VerifyDialog(QDialog):
         layout.addWidget(self.status_lbl)
 
         self.close_btn = QPushButton("Close")
-        self.close_btn.setEnabled(False)
-        self.close_btn.clicked.connect(self.accept)
+        self.close_btn.clicked.connect(self.reject)
         layout.addWidget(self.close_btn)
 
         self.files_to_hash = list(self.entry_data.get("hashes", {}).keys())
@@ -158,6 +157,17 @@ class VerifyDialog(QDialog):
         actual_item = QTableWidgetItem(f"ERROR: {err}")
         actual_item.setForeground(Qt.red)
         self.table.setItem(self.current_index, 2, actual_item)
+
+    def reject(self):
+        try:
+            if self.hashing_thread and self.hashing_thread.isRunning():
+                if self.hashing_worker:
+                    self.hashing_worker.cancel()
+                self.hashing_thread.quit()
+                self.hashing_thread.wait()
+        except RuntimeError:
+            pass
+        super().reject()
 
 
 class EditEntryDialog(QDialog):
