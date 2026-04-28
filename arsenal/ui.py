@@ -926,8 +926,10 @@ class AddEntryWidget(QWidget):
 
         self.hashing_thread.start()
 
-    def _on_thread_destroyed(self):
-        self.hashing_thread = None
+    def _on_thread_destroyed(self, obj=None):
+        sender = self.sender()
+        if self.hashing_thread is sender:
+            self.hashing_thread = None
 
     def _on_thread_finished(self):
         self._current_hash_index += 1
