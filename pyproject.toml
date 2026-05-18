@@ -4,7 +4,7 @@ version = "0.2.4"
 description = "Manage your installation files easily."
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = ["blake3>=1.0.8", "loguru>=0.7.3", "pyside6>=6.11.0"]
+dependencies = ["blake3>=1.0.8", "loguru>=0.7.3", "pyside6>=6.11.1"]
 
 [dependency-groups]
 dev = ["black>=26.3.1", "isort>=8.0.1", "nuitka>=4.0.8", "pylint>=4.0.6", "pytest>=9.0.3", "pytest-cov>=7.1.0"]
