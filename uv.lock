@@ -33,7 +33,7 @@ requires-dist = [
 dev = [
     { name = "black", specifier = ">=26.3.1" },
     { name = "isort", specifier = ">=8.0.1" },
-    { name = "nuitka", specifier = ">=4.0.8" },
+    { name = "nuitka", specifier = ">=4.2" },
     { name = "pylint", specifier = ">=4.0.6" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
@@ -224,9 +224,9 @@ wheels = [
 
 [[package]]
 name = "nuitka"
-version = "4.0.8"
+version = "4.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1c/48/e54130d57b89fc015d702e98a1a217b5757625d01a01cc07d29fd046d336/nuitka-4.0.8.tar.gz", hash = "sha256:3f87e87e4d3773997944ce401145ef21461337121d39ea0fbe678274005e60ba", size = 4422692, upload-time = "2026-04-10T07:18:15.109Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/14/f7/305d1eca71f554f52cac820b8d1765aeb5fb2b3732d7f49f5a32aa4d97d2/nuitka-4.2.tar.gz", hash = "sha256:b6112c10a5d0431e2b4309780257a03049a42605290e83f771d57a067a387410", size = 4628471, upload-time = "2026-08-27T14:17:30.409Z" }
 
 [[package]]
 name = "packaging"
